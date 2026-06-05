@@ -456,11 +456,8 @@ A valuable lesson was that technically correct validation rules are not always o
 
 Instead of discarding malformed Kafka messages, the pipeline stores them in a dedicated quarantine table along with the associated error information. This approach keeps the streaming application running while preserving the ability to investigate data quality issues, identify root causes, and potentially reprocess records later.
 
-7. **Idempotent loading patterns simplify recovery and operations.**
 
-Warehouse loading logic was designed to be safely re-runnable using ON CONFLICT DO NOTHING semantics. This reduced operational risk during testing and recovery scenarios because failed batches could be retried without introducing duplicate dimension records.
-
-8. **Observability is a core part of a data platform, not an optional enhancement.**
+7. **Observability is a core part of a data platform, not an optional enhancement.**
 
 The project became significantly easier to operate after monitoring, alerting, and quality validation were treated as first-class components. Separate DAGs for Kafka health, Spark health, and data quality created clear ownership boundaries and made failures easier to diagnose than if all operational checks had been embedded inside a single pipeline workflow.
 
