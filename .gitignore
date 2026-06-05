@@ -223,3 +223,8 @@ logs/
 .env
 *.log
 spark.log
+.DS_Store
+.env
+spark.log
+logs/
+docs/
