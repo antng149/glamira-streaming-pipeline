@@ -87,6 +87,9 @@ with DAG(
                 error_reason VARCHAR(255),
                 ingested_at  TIMESTAMP DEFAULT NOW()
             );
+
+            CREATE INDEX IF NOT EXISTS idx_fact_product_view_ingested_at
+                ON fact_product_view(ingested_at);
         """
     )
 
@@ -102,24 +105,23 @@ with DAG(
         num_executors=2,
         conf={
             # Postgres credentials
-            'spark.yarn.appMasterEnv.PG_HOST':     Variable.get('pg_host'),
-            'spark.yarn.appMasterEnv.PG_DB':       Variable.get('pg_db'),
-            'spark.yarn.appMasterEnv.PG_USER':     Variable.get('pg_user'),
-            'spark.yarn.appMasterEnv.PG_PASSWORD': Variable.get('pg_password'),
-            'spark.executorEnv.PG_HOST':           Variable.get('pg_host'),
-            'spark.executorEnv.PG_DB':             Variable.get('pg_db'),
-            'spark.executorEnv.PG_USER':           Variable.get('pg_user'),
-            'spark.executorEnv.PG_PASSWORD':       Variable.get('pg_password'),
+            'spark.yarn.appMasterEnv.PG_HOST':     '{{ var.value.pg_host }}',
+            'spark.yarn.appMasterEnv.PG_DB':       '{{ var.value.pg_db }}',
+            'spark.yarn.appMasterEnv.PG_USER':     '{{ var.value.pg_user }}',
+            'spark.yarn.appMasterEnv.PG_PASSWORD': '{{ var.value.pg_password }}',
+            'spark.executorEnv.PG_HOST':           '{{ var.value.pg_host }}',
+            'spark.executorEnv.PG_DB':             '{{ var.value.pg_db }}',
+            'spark.executorEnv.PG_USER':           '{{ var.value.pg_user }}',
+            'spark.executorEnv.PG_PASSWORD':       '{{ var.value.pg_password }}',
             # Kafka credentials
-            'spark.yarn.appMasterEnv.KAFKA_BOOTSTRAP_SERVERS': Variable.get('kafka_bootstrap_servers'),
-            'spark.executorEnv.KAFKA_BOOTSTRAP_SERVERS':       Variable.get('kafka_bootstrap_servers'),
+            'spark.yarn.appMasterEnv.KAFKA_BOOTSTRAP_SERVERS': '{{ var.value.kafka_bootstrap_servers }}',
+            'spark.executorEnv.KAFKA_BOOTSTRAP_SERVERS':       '{{ var.value.kafka_bootstrap_servers }}',
             'spark.yarn.appMasterEnv.SPARK_RUN_MODE': 'yarn',
             'spark.executorEnv.SPARK_RUN_MODE':       'yarn',
-            'spark.yarn.appMasterEnv.KAFKA_SASL_USERNAME': Variable.get('kafka_username'),
-            'spark.yarn.appMasterEnv.KAFKA_SASL_PASSWORD': Variable.get('kafka_password'),
-            'spark.executorEnv.KAFKA_SASL_USERNAME': Variable.get('kafka_username'),
-            'spark.executorEnv.KAFKA_SASL_PASSWORD': Variable.get('kafka_password'),
-            
+            'spark.yarn.appMasterEnv.KAFKA_SASL_USERNAME': '{{ var.value.kafka_username }}',
+            'spark.yarn.appMasterEnv.KAFKA_SASL_PASSWORD': '{{ var.value.kafka_password }}',
+            'spark.executorEnv.KAFKA_SASL_USERNAME': '{{ var.value.kafka_username }}',
+            'spark.executorEnv.KAFKA_SASL_PASSWORD': '{{ var.value.kafka_password }}',
         },
         timeout=300,
         retries=3

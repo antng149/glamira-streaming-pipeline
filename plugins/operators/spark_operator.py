@@ -21,6 +21,8 @@ class SparkJobOperator(BaseOperator):
     - Cleanup on failure
     """
 
+    template_fields = ('conf',)
+
     def __init__(
         self,
         application: str,

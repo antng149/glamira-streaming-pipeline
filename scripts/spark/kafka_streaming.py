@@ -1,5 +1,6 @@
 import os
 import psycopg2
+from psycopg2.extras import execute_values
 import sys
 import traceback
 from urllib.parse import urlparse
@@ -149,12 +150,13 @@ def store_dim_device(df):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         try:
-            for row in rows:
-                cursor.execute("""
+            data = [(row["browser"], row["os"], row["device_type"]) for row in rows]
+            if data:
+                execute_values(cursor, """
                     INSERT INTO dim_device (browser, os, device_type)
-                    VALUES (%s, %s, %s)
+                    VALUES %s
                     ON CONFLICT (browser, os, device_type) DO NOTHING
-                """, (row["browser"], row["os"], row["device_type"]))
+                """, data)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -182,18 +184,13 @@ def store_dim_date(df):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         try:
-            for row in rows:
-                cursor.execute("""
+            data = [(row["date_key"], row["year"], row["month"], row["day"], row["hour"]) for row in rows]
+            if data:
+                execute_values(cursor, """
                     INSERT INTO dim_date (date_key, year, month, day, hour)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES %s
                     ON CONFLICT (date_key) DO NOTHING
-                """, (
-                    row["date_key"],
-                    row["year"],
-                    row["month"],
-                    row["day"],
-                    row["hour"],
-                ))
+                """, data)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -216,12 +213,13 @@ def store_dim_product(df):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         try:
-            for row in rows:
-                cursor.execute("""
+            data = [(row["product_id"],) for row in rows]
+            if data:
+                execute_values(cursor, """
                     INSERT INTO dim_product (product_id)
-                    VALUES (%s)
+                    VALUES %s
                     ON CONFLICT (product_id) DO NOTHING
-                """, (row["product_id"],))
+                """, data)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -244,12 +242,13 @@ def store_dim_store(df):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         try:
-            for row in rows:
-                cursor.execute("""
+            data = [(row["store_id"],) for row in rows]
+            if data:
+                execute_values(cursor, """
                     INSERT INTO dim_store (store_id)
-                    VALUES (%s)
+                    VALUES %s
                     ON CONFLICT (store_id) DO NOTHING
-                """, (row["store_id"],))
+                """, data)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -273,12 +272,13 @@ def store_dim_referrer(df):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         try:
-            for row in rows:
-                cursor.execute("""
+            data = [(row["referrer_domain"],) for row in rows]
+            if data:
+                execute_values(cursor, """
                     INSERT INTO dim_referrer (referrer_domain)
-                    VALUES (%s)
+                    VALUES %s
                     ON CONFLICT (referrer_domain) DO NOTHING
-                """, (row["referrer_domain"],))
+                """, data)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -303,14 +303,16 @@ def store_dim_location(df):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         try:
-            for row in rows:
-                domain       = row["domain"]
-                country_code = extract_country_from_domain(domain)
-                cursor.execute("""
+            data = [
+                (row["ip_address"], extract_country_from_domain(row["domain"]), row["domain"])
+                for row in rows
+            ]
+            if data:
+                execute_values(cursor, """
                     INSERT INTO dim_location (ip_address, country_code, domain)
-                    VALUES (%s, %s, %s)
+                    VALUES %s
                     ON CONFLICT (ip_address) DO NOTHING
-                """, (row["ip_address"], country_code, domain))
+                """, data)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -396,8 +398,19 @@ def store_fact(df, spark):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         try:
-            for row in rows:
-                cursor.execute("""
+            ingested_at = datetime.utcnow()
+            data = [
+                (
+                    row["view_id"], row["date_key"], row["product_key"], row["store_key"],
+                    row["location_key"], row["device_key"], row["referrer_key"],
+                    row["event_ts"], row["event_hour"], row["time_stamp"],
+                    row["current_url"], row["referrer_url"], row["ip_address"],
+                    row["collection"], row["api_version"], ingested_at
+                )
+                for row in rows
+            ]
+            if data:
+                execute_values(cursor, """
                     INSERT INTO fact_product_view (
                         view_id, date_key, product_key, store_key,
                         location_key, device_key, referrer_key,
@@ -405,26 +418,9 @@ def store_fact(df, spark):
                         current_url, referrer_url, ip_address,
                         collection, api_version, ingested_at
                     )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES %s
                     ON CONFLICT (view_id) DO NOTHING
-                """, (
-                    row["view_id"],
-                    row["date_key"],
-                    row["product_key"],
-                    row["store_key"],
-                    row["location_key"],
-                    row["device_key"],
-                    row["referrer_key"],
-                    row["event_ts"],
-                    row["event_hour"],
-                    row["time_stamp"],
-                    row["current_url"],
-                    row["referrer_url"],
-                    row["ip_address"],
-                    row["collection"],
-                    row["api_version"],
-                    datetime.utcnow()
-                ))
+                """, data)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -448,18 +444,18 @@ def store_bad_records(df, batch_id):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         try:
-            for row in rows:
-                cursor.execute("""
+            ingested_at = datetime.utcnow()
+            data = [
+                (batch_id, row["kafka_value"], "MALFORMED_JSON_OR_SCHEMA_MISMATCH", ingested_at)
+                for row in rows
+            ]
+            if data:
+                execute_values(cursor, """
                     INSERT INTO bad_product_view_records (
                         batch_id, kafka_value, error_reason, ingested_at
                     )
-                    VALUES (%s, %s, %s, %s)
-                """, (
-                    batch_id,
-                    row["kafka_value"],
-                    "MALFORMED_JSON_OR_SCHEMA_MISMATCH",
-                    datetime.utcnow()
-                ))
+                    VALUES %s
+                """, data)
             conn.commit()
         except Exception:
             conn.rollback()

@@ -8,18 +8,22 @@ import time
 logger = logging.getLogger(__name__)
 
 
-def get_kafka_config():
-    """Get Kafka config from Airflow Variables"""
+def get_kafka_sasl_config():
+    """Get Kafka SASL credentials from Airflow Variables.
+    bootstrap.servers is excluded — it is passed explicitly by each operator
+    via template_fields to avoid fetching it twice.
+    """
     return {
-        'bootstrap.servers': Variable.get('kafka_bootstrap_servers'),
         'security.protocol': Variable.get('kafka_security_protocol'),
-        'sasl.mechanism': Variable.get('kafka_sasl_mechanism'),
-        'sasl.username': Variable.get('kafka_sasl_username'),
-        'sasl.password': Variable.get('kafka_sasl_password'),
+        'sasl.mechanism':    Variable.get('kafka_sasl_mechanism'),
+        'sasl.username':     Variable.get('kafka_sasl_username'),
+        'sasl.password':     Variable.get('kafka_sasl_password'),
     }
 
 
 class KafkaHealthCheckOperator(BaseOperator):
+    template_fields = ('bootstrap_servers',)
+
     def __init__(
         self,
         bootstrap_servers: str,
@@ -58,7 +62,7 @@ class KafkaHealthCheckOperator(BaseOperator):
 
     def _get_admin_client(self):
         config = {
-            **get_kafka_config(),
+            **get_kafka_sasl_config(),
             'bootstrap.servers': self.bootstrap_servers,
             'socket.timeout.ms': self.timeout * 1000,
             'request.timeout.ms': self.timeout * 1000,
@@ -83,7 +87,7 @@ class KafkaHealthCheckOperator(BaseOperator):
 
     def _check_consumer_group(self):
         config = {
-            **get_kafka_config(),
+            **get_kafka_sasl_config(),
             'bootstrap.servers': self.bootstrap_servers,
             'group.id': self.consumer_group,
             'socket.timeout.ms': self.timeout * 1000,

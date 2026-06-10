@@ -1,10 +1,8 @@
 from datetime import datetime
-from airflow.models import Variable
 from airflow import DAG
 from operators.kafka_operator import KafkaHealthCheckOperator, KafkaDataFlowCheckOperator
 from telegram_alert import on_failure_callback, on_success_callback
 
-KAFKA_BOOTSTRAP_SERVERS = Variable.get('kafka_bootstrap_servers')
 KAFKA_TOPICS = ['product_view']
 CONSUMER_GROUP = 'airflow-monitor'
 
@@ -24,7 +22,7 @@ with DAG(
 
     check_broker = KafkaHealthCheckOperator(
         task_id='check_broker',
-        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        bootstrap_servers='{{ var.value.kafka_bootstrap_servers }}',
         topics=KAFKA_TOPICS,
         consumer_group=CONSUMER_GROUP,
         timeout=30,

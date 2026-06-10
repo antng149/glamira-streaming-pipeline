@@ -1,0 +1,99 @@
+Sau khi đọc code của mình anh có một số feedback sau nha:
+
+- **Cấu trúc project tốt:** Project được tổ chức gọn gàng và bài bản. Các DAGs được tách riêng biệt theo logic nghiệp vụ (`spark_control`, `data_transfer`, `quality_check`, `archival`, `kafka_monitoring`...), custom operators được đặt đúng thư mục `plugins`. Code sạch, dễ đọc. Telegram alert cũng được tách module riêng.
+
+- **Sử dụng `Variable.get()` ngoài execution context:** Ở `dags/kafka_monitoring.py` em đang gọi `Variable.get()` ở top-level module, và ở `dags/spark_control.py` em truyền thẳng `Variable.get()` vào tham số khi khởi tạo Operator. Điều này khiến Airflow phải tạo DB connection mỗi lần parse DAG (thường mỗi 30 giây), gây tốn tài nguyên không cần thiết.
+
+```python
+# dags/kafka_monitoring.py - gọi ở top-level, chạy mỗi lần parse DAG
+KAFKA_BOOTSTRAP_SERVERS = Variable.get('kafka_bootstrap_servers')
+
+# dags/spark_control.py - truyền trực tiếp vào tham số khi khởi tạo Operator
+conf={
+    'spark.yarn.appMasterEnv.PG_HOST': Variable.get('pg_host'),
+    ...
+}
+```
+
+Cách khắc phục: Dùng Jinja template thay vì `Variable.get()` tại thời điểm khởi tạo. Em khai báo `template_fields` trong class Operator, sau đó dùng `{{ var.value.pg_host }}` trong DAG:
+
+```python
+# Trong SparkJobOperator
+class SparkJobOperator(BaseOperator):
+    template_fields = ("conf",)
+
+# Trong DAG
+conf={
+    'spark.yarn.appMasterEnv.PG_HOST': '{{ var.value.pg_host }}',
+    ...
+}
+```
+
+Hoặc đơn giản hơn là gọi `Variable.get()` bên trong hàm `execute()` thay vì ở ngoài.
+
+- **`_store_batch` trong `transfer_operator.py` đang insert từng message một:** Mặc dù em đã gom message theo `batch_size`, nhưng bên trong hàm `_store_batch` em vẫn đang dùng vòng lặp `for` để `execute` từng câu INSERT riêng lẻ. Điều này làm mất đi lợi ích của việc batch.
+
+```python
+# plugins/operators/transfer_operator.py
+def _store_batch(self, hook, messages):
+    conn = hook.get_conn()
+    cursor = conn.cursor()
+    try:
+        for msg in messages:  # vẫn insert từng cái một
+            cursor.execute(
+                f"INSERT INTO {self.target_table} (raw_data) VALUES (%s)",
+                (json.dumps(msg),)
+            )
+        conn.commit()
+```
+
+Em có thể dùng `executemany()` hoặc tốt hơn nữa là dùng `execute_values` của psycopg2 để insert toàn bộ batch trong một lần gọi:
+
+```python
+from psycopg2.extras import execute_values
+
+def _store_batch(self, hook, messages):
+    conn = hook.get_conn()
+    cursor = conn.cursor()
+    try:
+        rows = [(json.dumps(msg),) for msg in messages]
+        execute_values(
+            cursor,
+            f"INSERT INTO {self.target_table} (raw_data) VALUES %s",
+            rows
+        )
+        conn.commit()
+```
+
+- **Các câu SQL trong `quality_check.py` scan toàn bộ bảng, không có time filter:** DAG này chạy `@hourly`, nhưng hầu hết các check đều query toàn bộ bảng `fact_product_view` mà không lọc theo thời gian. Bảng streaming data sẽ ngày càng lớn theo thời gian, khiến các câu query này ngày càng chậm.
+
+```python
+# dags/quality_check.py - scan toàn bộ bảng, rất chậm khi data lớn
+{
+    'name': 'no_null_view_id',
+    'sql': 'SELECT COUNT(*) FROM fact_product_view WHERE view_id IS NULL',
+    ...
+},
+{
+    'name': 'no_null_event_ts',
+    'sql': 'SELECT COUNT(*) FROM fact_product_view WHERE event_ts IS NULL',
+    ...
+},
+```
+
+Vì DAG chạy mỗi giờ, em chỉ cần kiểm tra data trong khoảng thời gian gần nhất là đủ. Em nên thêm điều kiện lọc theo `ingested_at` để giới hạn phạm vi query:
+
+```python
+{
+    'name': 'no_null_view_id',
+    'sql': "SELECT COUNT(*) FROM fact_product_view WHERE view_id IS NULL AND ingested_at > NOW() - INTERVAL '2 hours'",
+    ...
+},
+{
+    'name': 'no_null_event_ts',
+    'sql': "SELECT COUNT(*) FROM fact_product_view WHERE event_ts IS NULL AND ingested_at > NOW() - INTERVAL '2 hours'",
+    ...
+},
+```
+
+Áp dụng tương tự cho các check `no_null_store_key`, `no_null_device_key`, `no_null_date_key`, `no_null_ip_address`, `no_duplicate_view_ids`. Ngoài ra em cũng nên đảm bảo cột `ingested_at` được đánh index để các query này chạy nhanh.

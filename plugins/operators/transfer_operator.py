@@ -1,4 +1,5 @@
 from airflow.models import BaseOperator, Variable
+from psycopg2.extras import execute_values
 from confluent_kafka import Consumer, KafkaError
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 import json
@@ -125,11 +126,12 @@ class KafkaToPostgresOperator(BaseOperator):
         conn = hook.get_conn()
         cursor = conn.cursor()
         try:
-            for msg in messages:
-                cursor.execute(
-                    f"INSERT INTO {self.target_table} (raw_data) VALUES (%s)",
-                    (json.dumps(msg),)
-                )
+            data = [(json.dumps(msg),) for msg in messages]
+            execute_values(
+                cursor,
+                f"INSERT INTO {self.target_table} (raw_data) VALUES %s",
+                data
+            )
             conn.commit()
         except Exception as e:
             conn.rollback()
