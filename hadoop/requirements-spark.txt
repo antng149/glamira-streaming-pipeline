@@ -1,0 +1,5 @@
+# Python dependencies for the Spark job (kafka_streaming.py) running on YARN nodes.
+# These are baked into the Hadoop image via the Dockerfile so the cluster is
+# fully reproducible — no manual pip install on containers.
+psycopg2-binary
+user-agents
