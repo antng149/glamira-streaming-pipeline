@@ -1,8 +1,8 @@
+import sys
+import traceback
 import os
 import psycopg2
 from psycopg2.extras import execute_values
-import sys
-import traceback
 from urllib.parse import urlparse
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json, udf, to_timestamp, date_format, year, month, dayofmonth, hour
@@ -12,6 +12,7 @@ from pyspark.sql.types import (
 )
 from user_agents import parse as ua_parse
 from datetime import datetime
+
 
 # ─────────────────────────────────────────
 # POSTGRES CONFIG
